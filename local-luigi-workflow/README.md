@@ -4,7 +4,7 @@
 
 conda env create -n wes --file ./wes_environment.yaml
 
-## run Pipelines
+## Run Pipelines
 
 1. run luigid server in backgroud
 
@@ -33,4 +33,10 @@ conda env create -n wes --file ./wes_environment.yaml
 
 ```
    python main.py --workers 20 sample_fastq.csv
+```
+
+5. run submodule
+
+```
+   PYTHONPATH=~/Pipelines/wes/local-luigi-workflow/ luigi --module tasks Annovar --vcf vcf_name
 ```
