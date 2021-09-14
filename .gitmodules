@@ -1,0 +1,6 @@
+[submodule "wdl"]
+	path = gatk-wdl-workflow
+	url = https://github.com/broadinstitute/warp.git
+[submodule "luigi"]
+	path = local-luigi-workflow
+	url = https://github.com/broadinstitute/warp.git
