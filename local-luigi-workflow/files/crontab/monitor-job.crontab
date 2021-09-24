@@ -1,0 +1,1 @@
+*/5 * * * * ps -C python -o pid,%cpu,%mem,stime,etime,command >> memory-monitor.log

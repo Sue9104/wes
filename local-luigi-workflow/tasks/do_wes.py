@@ -5,6 +5,22 @@ import numpy as np
 import subprocess
 import os
 import logging
+import time
+
+# callbacks
+@luigi.Task.event_handler(luigi.Event.START)
+def start_time(task):
+    logging.warning('Task:{task}\t StartTime:{time}'.format(
+        task = task.__class__.__name__,
+        time = time.strftime('%Y-%m-%d %H:%M', time.localtime())
+    ))
+
+@luigi.Task.event_handler(luigi.Event.PROCESSING_TIME)
+def execution_time(task, processing_time):
+    logging.warning('Task:{task}\t ProcessingTime:{time:.0f} min'.format(
+        task = task.__class__.__name__,
+        time = processing_time / 60
+    ))
 
 class Reference(luigi.Config):
     """Reference for Whole Exome Sequencing Analysis. """
