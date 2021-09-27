@@ -1,1 +1,3 @@
-*/5 * * * * ps -C python -o pid,%cpu,%mem,stime,etime,command >> memory-monitor.log
+#!/bin/bash
+*/1 * * * * /bin/ps aux --sort -rss >> memory-monitor.log 2>&1
+
