@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 import subprocess
 import os
+import glob
 import logging
 import time
 from .reference import Reference
@@ -31,7 +32,7 @@ def execution_time(task, processing_time):
 ##################################################
 ## Class Definition
 ##################################################
-class Input(object):
+class Input(luigi.Config):
     """Input Parameter for analysis
 
     Attributes:
@@ -44,16 +45,14 @@ class Input(object):
             {"sample_name": named_turple("LANE", "R1", "R2")}
 
     """
-
-    def __init__(self, infile, outdir):
-        """object initialize"""
-        self.infile = infile
-        self.outdir = outdir
+    infile = luigi.Parameter()
+    outdir = luigi.Parameter()
 
     @property
     def samples(self):
+        os.makedirs(self.outdir, exist_ok=True)
         sample_info_data = pd.read_csv(self.infile)
-        samples = list( set(sample_info_data["#SAMPLE"].values) )
+        samples = list( set(sample_info_data["sample"].values) )
         return samples
 
     @property
@@ -66,8 +65,7 @@ class Input(object):
         return info
 
 
-@inherits(Input)
-class QualityControl(luigi.WrapperTask):
+class QualityControl(Input, luigi.Task):
     """Using FastQC to quality control
 
     Attributes:
@@ -121,8 +119,6 @@ class FastQC(luigi.Task):
         - _fastqc.zip
         - _fastqc.html
 
-    Raise:
-        NotImplementedError: class need the requires function!!!
     """
 
     resources = {"cpu": 1}
@@ -130,7 +126,7 @@ class FastQC(luigi.Task):
     outdir = luigi.Parameter()
 
     def requires(self):
-        raise NotImplementedError("Task Need to implement requires function")
+        return []
 
     def output(self):
         out_prefix = os.path.basename(self.fastq).split('.')[0]
@@ -139,14 +135,13 @@ class FastQC(luigi.Task):
         )
 
     def run(self):
-        cmd = "fastqc -f fastq -o {} {}".format(self.outdir_qc, self.fastq)
+        cmd = "fastqc -f fastq -o {} {}".format(self.outdir, self.fastq)
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
 
 
 
-@inherits(Input)
-class FiltLowQuality(luigi.WrapperTask):
+class FiltLowQuality(Input, luigi.WrapperTask):
     """Filt Adapter and Low Quality by Sample
 
     This is a wrapper task for one sample with multiple lanes
@@ -172,7 +167,7 @@ class FiltLowQuality(luigi.WrapperTask):
     def requires(self):
         return [
             Trimmomatic(sample=self.sample, lane = data.lane,
-                r1=data.r1, r2=data.r2,
+                R1=data.r1, R2=data.r2,
                 outdir=self.outdir_trim_adapter)
             for data in self.info[self.sample]
         ]
@@ -217,13 +212,12 @@ class Trimmomatic(luigi.Task):
 {R1} {R2} -baseout {prefix} ILLUMINACLIP:{adapter}:2:30:10 \
 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36""".format(
             R1 = self.R1, R2=self.R2, prefix = prefix,
-            adapter = Reference.illumina_adapter, outdir = self.outdir,
+            adapter = Reference().illumina_adapter, outdir = self.outdir,
         )
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
 
-@inherits(Input)
-class Mapping(luigi.WrapperTask):
+class Mapping(Input, luigi.Task):
     """Mapping and Coverage Statistics by Sample
 
     Workflow: BWA -> MergeSampleBWA -> MappingStatistics
@@ -256,10 +250,12 @@ class Mapping(luigi.WrapperTask):
     def output(self):
         return [
             luigi.LocalTarget(
-                "{}/{}.merged.bam".format(self.outdir_mapping, self.sample),
+                "{}/{}.merged.bam".format(self.outdir_mapping, self.sample)
+            ),
+            luigi.LocalTarget(
                 "{}/quality-control/{}/coverage.report".format(
-                    self.outdir, self.sample
-                ),
+                    self.outdir, self.sample)
+            ),
         ]
 
     def runs(self):
@@ -300,8 +296,7 @@ class Mapping(luigi.WrapperTask):
         yield BaseScoreQualityRecalibrator(bam=markdup_bam, outfile=bqsr_bam)
 
 
-@inherits(Input)
-class PostMapping(luigi.WrapperTask):
+class PostMapping(Input, luigi.Task):
     """Mapping Postprocessing before GATK CallVariants
 
     Workflow: MarkDuplicateSpark -> BaseScoreQualityRecalibrator
@@ -402,13 +397,12 @@ class MappingStatistics(luigi.Task):
         os.makedirs(self.outdir, exist_ok=True)
         cmd = "{bamdst} -p {bed} -o {outdir}/ {bam}".format(
             outdir=self.outdir, bam=self.bam,
-            bamdst=Tools.bamdst, bed=Reference.bed,
+            bamdst=Tools().bamdst, bed=Reference().bed,
         )
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
 
 
-@inherits(Input)
 class BWA(luigi.Task):
     """BWA Mapping
 
@@ -444,7 +438,7 @@ class BWA(luigi.Task):
 -R "@RG\\tID:{lane}\\tSM:{sample}\\tLB:WES\\tPL:Illumina" {genome} {fq1} {fq2} \
 | samtools sort -@ 2 -o {outdir}/{sample}_{lane}.sorted.bam - """.format(
             sample=self.sample, lane=self.lane, fq1=self.fq1, fq2=self.fq2,
-            outdir=self.outdir, genome=Reference.genome,
+            outdir=self.outdir, genome=Reference().genome,
         )
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
@@ -516,10 +510,10 @@ gatk ApplyBQSR --java-options '-Xmx16g \
 -XX:+PrintGCDetails -XX:GCTimeLimit=50 -XX:GCHeapFreeLimit=10' \
 --reference {genome} --input {bam} \
 --bqsr-recal-file {outfile}.recal_table --output {outfile}""".format(
-            genome=Reference.genome, interval=Reference.interval,
-            mills_gold_standard = Reference.mills_gold_standard,
-            snp_1000g=Reference.snp_1000g, indel_1000g=Reference.indel_1000g,
-            hapmap=Reference.hapmap, omni=Reference.omni, dbsnp=Reference.dbsnp,
+            genome=Reference().genome, interval=Reference().interval,
+            mills_gold_standard = Reference().mills_gold_standard,
+            snp_1000g=Reference().snp_1000g, indel_1000g=Reference().indel_1000g,
+            hapmap=Reference().hapmap, omni=Reference().omni, dbsnp=Reference().dbsnp,
             bam=self.bam, outfile=self.outfile,
         )
         logging.info(cmd)
@@ -579,8 +573,8 @@ class HaplotypeCaller(luigi.Task):
 gatk CollectHsMetrics -R {genome} \
 --BAIT_INTERVALS {interval} --TARGET_INTERVALS {interval} \
 -I {outfile} -O {outfile}.hs-metrics.txt """.format(
-            genome=Reference.genome, version=Reference.genome_version,
-            dbsnp=Reference.dbsnp, interval=Reference.interval,
+            genome=Reference().genome, version=Reference().genome_version,
+            dbsnp=Reference().dbsnp, interval=Reference().interval,
             bam=self.bam, outfile=self.outfile,
         )
         logging.info(cmd)
@@ -618,9 +612,9 @@ gatk FilterVariantTranches --info-key CNN_2D \
 --resource {hapmap} --resource {mills_gold_standard} \
 --snp-tranche 99.95 --indel-tranche 99.4 --invalidate-previous-filters \
 -V {outfile}.cnn_mark.gz -O {outfile}""".format(
-            genome = Reference.genome, version = Reference.genome_version,
-            hapmap = Reference.hapmap,
-            mills_gold_standard = Reference.mills_gold_standard,
+            genome = Reference().genome, version = Reference().genome_version,
+            hapmap = Reference().hapmap,
+            mills_gold_standard = Reference().mills_gold_standard,
             bam = self.bam, raw = self.raw, outfile = self.outfile
         )
         logging.info(cmd)
@@ -665,7 +659,7 @@ gatk VariantFiltration -R {genome} \
 gatk MergeVcfs -I {outfile}.snp.hard-filt.gz -I {outfile}.indel.hard-filt.gz \
 -O {outfile}
 rm {outfile}.snp* {outfile}.indel* """.format(
-            genome = Reference.genome,
+            genome = Reference().genome,
             bam=self.bam, raw=self.raw, outfile=self.outfile,
         )
         logging.info(cmd)
@@ -716,16 +710,15 @@ head -1 {vcf}.hg19_multianno.csv \
 
 rm {vcf}.hg19_multianno.final.csv.tmp
         """.format(
-            annovar_software_dir = Reference.annovar_software_dir,
-            annovar_database_dir = Reference.annovar_database_dir,
+            annovar_software_dir = Reference().annovar_software_dir,
+            annovar_database_dir = Reference().annovar_database_dir,
             vcf = self.vcf
         )
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
 
 
-@inherits(Input)
-class RemoveDuplicates(luigi.Task):
+class RemoveDuplicates(Input, luigi.Task):
     """Remove Duplicates Before Calling Variants: Mpileup and Freebayes
 
     Attributes:
@@ -779,7 +772,7 @@ class Freebayes(luigi.Task):
 
     def run(self):
         cmd = "freebayes -f {genome} {bam} > {outfile}".format(
-            genome=Reference.genome, bam=self.inbam, outfile=self.outvcf
+            genome=Reference().genome, bam=self.inbam, outfile=self.outvcf
         )
         # bcftools filter -e 'QUAL < 20' -s LOWQUAL {rawvcf} {outvcf}
         logging.info(cmd)
@@ -808,14 +801,13 @@ class Mpileup(luigi.Task):
         cmd = """bcftools mpileup -f {genome} {bam} \
 | bcftools call -mv --ploidy {ploidy} -o {outvcf}""".format(
             bam=self.inbam, vcf=self.outvcf,
-            genome=Reference.genome, ploidy=Reference.genome_version
+            genome=Reference().genome, ploidy=Reference().genome_version
         )
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
 
 
-@inherits(Input)
-class GATKSingle(luigi.Task):
+class GATKSingle(Input, luigi.Task):
     """GATK Calling Variants
 
     Preparation: FiltLowQuality -> Mapping -> PostMapping
@@ -838,8 +830,8 @@ class GATKSingle(luigi.Task):
 
     @property
     def vcf(self):
-        return "{}/{}.{}.raw.vcf.gz".format(
-            self.outdir_variant, self.sample, Reference.genome_version,
+        return "{}/{}.{}.gatk.raw.vcf.gz".format(
+            self.outdir_variants, self.sample, Reference().genome_version,
         )
 
     def requires(self):
@@ -857,10 +849,10 @@ class GATKSingle(luigi.Task):
         #    outfile="{}.hard-filt.vcf.gz".format(self.prefix)
         #)
         yield Annovar(vcf=self.vcf)
+        yield Backup(sample=self.sample, indir=self.outdir)
 
 
-@inherits(Input)
-class FreebayesSingle(luigi.Task):
+class FreebayesSingle(Input, luigi.Task):
     """Freebayes Calling Variants for Single Sample
 
     Attributes:
@@ -878,7 +870,7 @@ class FreebayesSingle(luigi.Task):
     @property
     def vcf(self):
         return "{}/{}.{}.freebayes.raw.vcf.gz".format(
-            self.outdir_variants, self.sample, Reference.genome_version,
+            self.outdir_variants, self.sample, Reference().genome_version,
         )
 
     def requires(self):
@@ -891,10 +883,10 @@ class FreebayesSingle(luigi.Task):
         inbam = "{}/mapping/{}.dedup.bam".format(self.outdir, self.sample)
         yield Freebayes(inbam=inbam, outvcf=self.vcf)
         yield Annovar(vcf=self.vcf)
+        yield Backup(sample=self.sample, indir=self.outdir)
 
 
-@inherits(Input)
-class MpileupSingle(luigi.Task):
+class MpileupSingle(Input, luigi.Task):
     """Mpileup Calling Variants for Single Sample
 
     Attributes:
@@ -912,7 +904,7 @@ class MpileupSingle(luigi.Task):
     @property
     def vcf(self):
         return "{}/{}.{}.mpileup.raw.vcf.gz".format(
-            self.outdir_variants, self.sample, Reference.genome_version,
+            self.outdir_variants, self.sample, Reference().genome_version,
         )
 
     def requires(self):
@@ -925,10 +917,10 @@ class MpileupSingle(luigi.Task):
         inbam = "{}/mapping/{}.dedup.bam".format(self.outdir, self.sample)
         yield Mpileup(inbam=inbam, outvcf=self.vcf)
         yield Annovar(vcf=self.vcf)
+        yield Backup(sample=self.sample, indir=self.outdir)
 
 
-@inherits(Input)
-class DoWES(luigi.WrapperTask):
+class DoWES(Input, luigi.WrapperTask):
     """WES Analysis
 
     Attributes:
@@ -940,9 +932,61 @@ class DoWES(luigi.WrapperTask):
         * mpileup
 
     """
-
     def requires(self):
         raise NotImplementedError("Task Need to implement requires function")
+
+
+class Backup(luigi.Task):
+    """Backup for Important Files
+
+    Attributes:
+        indir: analysis directory
+        sample: sample name
+
+    Output:
+        - bam
+        - mapping statistics
+        - vcf
+        - annotated csv
+
+    """
+    resources = {"cpu": 1}
+    sample = luigi.Parameter()
+    indir = luigi.Parameter()
+
+    @property
+    def outdir_backup(self):
+        outdir_backup = "{}/backup/{}".format(self.indir)
+        os.makedirs(outdir_backup, exist_ok=True)
+        return outdir_backup
+
+    def requires(self):
+        return []
+
+    def output(self):
+        return luigi.LocalTarget('{}/backup.finshed'.format(self.outdir_backup))
+
+    def run(self):
+        cmd = """cp -r {indir}/quality-control/{sample} {backup}/quality-control\
+ && cp {indir}/call-variants/{sample}*.raw.vcf.gz \
+ {indir}/call-variants/{sample}*hg19_multianno*csv {backup}/ """.format(
+            indir=self.indir, sample=self.sample, backup=self.outdir_backup,
+        )
+        # for gatk
+        bqsr_files = glob.glob(
+            "{}/mapping/{}*bqsr.ba*".format(self.indir,self.sample)
+        )
+        if len(bqsr_files) > 0:
+            cmd += "cp {} {}/".format(" ".join(bqsr_files), self.outdir_backup)
+        # for
+        dedup_files = glob.glob(
+            "{}/mapping/{}*dedup.ba*".format(self.indir,self.sample)
+        )
+        if len(dedup_files) > 0:
+            cmd += "cp {} {}/".format(" ".join(dedup_files), self.outdir_backup)
+        cmd += " && touch {}/backup.finshed".format(self.outdir_backup)
+        logging.info(cmd)
+        subprocess.run(cmd, shell=True)
 
 
 class Qualimap(luigi.Task):
@@ -955,9 +999,11 @@ class Qualimap(luigi.Task):
         raise NotImplemetedError("Need to be implemented!")
 
     def output(self):
-        return luigi.LocalTarget("{outdir}/mapping/{sample}/qualimapReport.html".format(
-            outdir = self.outdir, sample = self.sample
-        ))
+        return luigi.LocalTarget(
+            "{outdir}/mapping/{sample}/qualimapReport.html".format(
+                outdir = self.outdir, sample = self.sample
+            )
+        )
 
     def run(self):
         cmd = "qualimap bamqc -bam {outdir}/mapping/{sample}.sorted.bam -nt 8 \

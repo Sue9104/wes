@@ -1,22 +1,22 @@
-from tasks import *
 import luigi
-
+import tasks
 
 class QualityControl(tasks.QualityControl):
     def requires(self):
         fastqs = []
-        for _, lanes in self.info:
+        for _, lanes in self.info.items():
             for lane in lanes:
                 fastqs += [lane.r1, lane.r2]
-        return [FastQC(fastq=fastq, outdir=self.outdir_qc)for fastq in fastqs]
+        return [tasks.FastQC(fastq=fastq, outdir=self.outdir_qc)
+                for fastq in fastqs]
 
 class FastQC(tasks.FastQC):
     def requires(self):
-        return CheckExists(file=self.fastq)
+        return tasks.CheckExists(file=self.fastq)
 
 class Mapping(tasks.Mapping):
     def requires(self):
-        return FiltLowQuality(
+        return tasks.FiltLowQuality(
             infile=self.infile, outdir=self.outdir, sample=self.sample,
         )
 
@@ -58,4 +58,5 @@ class DoWES(tasks.DoWES):
                 infile=self.infile, outdir=self.outdir, sample=sample
             ) for sample in self.samples
         ]
+        return tasks
 

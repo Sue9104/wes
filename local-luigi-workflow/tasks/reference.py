@@ -32,4 +32,3 @@ class Reference(luigi.Config):
     phase3_1000g = luigi.Parameter(default=None)
     indel_1000g = luigi.Parameter()
     illumina_adapter = luigi.Parameter()
-
