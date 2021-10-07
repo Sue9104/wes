@@ -6,6 +6,7 @@ import subprocess
 import os
 import logging
 import time
+from .reference import Reference
 
 # callbacks
 @luigi.Task.event_handler(luigi.Event.START)
@@ -22,30 +23,17 @@ def execution_time(task, processing_time):
         time = processing_time / 60
     ))
 
-class Reference(luigi.Config):
-    """Reference for Whole Exome Sequencing Analysis. """
-    genome = luigi.Parameter()
-    genome_version = luigi.Parameter()
-    ploidy = luigi.Parameter()
-    interval = luigi.Parameter()
-    bed = luigi.Parameter()
-    dbsnp = luigi.Parameter()
-    mills_gold_standard = luigi.Parameter()
-    omni = luigi.Parameter()
-    hapmap = luigi.Parameter()
-    snp_1000g = luigi.Parameter()
-    phase3_1000g = luigi.Parameter()
-    indel_1000g = luigi.Parameter()
-
 
 class DoWES(luigi.WrapperTask):
     infile = luigi.Parameter()
     outdir = luigi.Parameter()
     def requires(self):
-        yield QualityControl(infile=self.infile, outdir=self.outdir)
-        yield CallVariants(infile=self.infile, outdir=self.outdir)
-        yield Annotation(infile=self.infile, outdir=self.outdir)
-        yield Backup(infile=self.infile, outdir=self.outdir)
+        return [
+            QualityControl(infile=self.infile, outdir=self.outdir),
+            CallVariants(infile=self.infile, outdir=self.outdir),
+            Annotation(infile=self.infile, outdir=self.outdir),
+            Backup(infile=self.infile, outdir=self.outdir)
+        ]
 
 @inherits(DoWES)
 class Backup(luigi.Task):
@@ -98,9 +86,15 @@ cp -r {outdir}/quality-control/{testingid} {sampledir}/quality-control \
 class QualityControl(luigi.WrapperTask):
     resources = {"cpu": 6}
 
+    @property
+    def outdir_qc(self):
+        outdir_qc = os.path.join(self.outdir, 'quality-control')
+        os.makedirs(outdir_qc, exist_ok=True)
+        return outdir_qc
+
     def requires(self):
         outdir_qc = os.path.join(self.outdir, 'quality-control')
-        yield MultiQC(infile=self.infile, outdir=self.outdir, outdir_qc=outdir_qc)
+        return MultiQC(infile=self.infile, outdir=self.outdir, outdir_qc=outdir_qc)
 
 
 class FastQC(luigi.Task):
@@ -151,7 +145,7 @@ class FiltLowQuality(luigi.WrapperTask):
         outdir_trim_adapter = os.path.join(self.outdir, 'trim-adapter')
         os.makedirs(outdir_trim_adapter, exist_ok=True)
         sample_infos = pd.read_csv(self.infile, index_col=[0,1])
-        yield [Trimmomatic(sample=sample, lane = lane,
+        return [Trimmomatic(sample=sample, lane = lane,
                            R1=sample_infos.loc[sample]["R1"],
                            R2=sample_infos.loc[sample]["R2"],
                            outdir_trim_adapter=outdir_trim_adapter)
@@ -191,18 +185,18 @@ class Mapping(luigi.WrapperTask):
 
     def requires(self):
         sample_infos = pd.read_csv(self.infile, index_col=[0,1])
-        yield [ MergeSampleBWA(infile=self.infile, outdir=self.outdir, sample=sample)
+        return [ MergeSampleBWA(infile=self.infile, outdir=self.outdir, sample=sample)
                for sample, value in sample_infos.groupby('#SAMPLE') ]
 
 @inherits(DoWES)
 class MergeSampleBWA(luigi.Task):
-    resources = {"cpu": 10, "memory": 1}
+    resources = {"cpu": 2, "memory": 1}
     sample = luigi.Parameter()
     bamdst = luigi.Parameter()
 
     def requires(self):
         sample_infos = pd.read_csv(self.infile, index_col=[0,1])
-        yield [BWA(infile=self.infile, sample=self.sample, lane=index[1], outdir=self.outdir)
+        return [BWA(infile=self.infile, sample=self.sample, lane=index[1], outdir=self.outdir)
                for index in sample_infos.groupby('#SAMPLE').get_group(self.sample).index]
 
     def output(self):
@@ -224,7 +218,7 @@ class MergeSampleBWA(luigi.Task):
 
 @inherits(DoWES)
 class BWA(luigi.Task):
-    resources = {"cpu": 10, "memory": 1}
+    resources = {"cpu": 15, "memory": 10}
     bamdst = luigi.Parameter()
 
     sample = luigi.Parameter()
@@ -299,7 +293,7 @@ class DataProcessingBeforeCalling(luigi.Task):
     samples = luigi.ListParameter()
 
     def requires(self):
-        yield [ApplyBQSR(sample=sample, infile=self.infile, outdir=self.outdir)
+        return [ApplyBQSR(sample=sample, infile=self.infile, outdir=self.outdir)
                for sample in self.samples]
 
     def output(self):
@@ -308,7 +302,7 @@ class DataProcessingBeforeCalling(luigi.Task):
 
 
 class MarkDuplicate(luigi.Task):
-    resources = {"cpu": 8, "memory": 16}
+    resources = {"cpu": 20, "memory": 18}
     sample = luigi.Parameter()
     outdir = luigi.Parameter()
 
@@ -334,7 +328,7 @@ gatk --java-options '-Xmx16G' MarkDuplicatesSpark -conf 'spark.executor.cores=8'
         subprocess.run(cmd, shell=True)
 
 class BaseScoreQualityRecalibrator(luigi.Task):
-    resources = {"cpu": 2, "memory": 16}
+    resources = {"cpu": 4, "memory": 4}
     sample = luigi.Parameter()
     outdir = luigi.Parameter()
 
@@ -380,7 +374,7 @@ class BaseScoreQualityRecalibrator(luigi.Task):
         subprocess.run(cmd, shell=True)
 
 class ApplyBQSR(luigi.Task):
-    resources = {"cpu": 2, "memory": 16}
+    resources = {"cpu": 2, "memory": 20}
     sample = luigi.Parameter()
     outdir = luigi.Parameter()
 
@@ -680,7 +674,7 @@ class Annovar(luigi.Task):
         outfile (str): default vcf.hg19_multianno.csv
 
     """
-    resources = {"cpu": 1, "memory": 1}
+    resources = {"cpu": 2, "memory": 2}
     vcf = luigi.Parameter()
     annovar_software_dir = luigi.Parameter()
     annovar_database_dir = luigi.Parameter()
@@ -711,7 +705,7 @@ rm {vcf}.hg19_multianno.final.csv.tmp
 
 @inherits(DoWES)
 class Annotation(luigi.Task):
-    resources = {"cpu": 8, "memory": 4}
+    resources = {"cpu": 2, "memory": 2}
 
     def requires(self):
         return CallVariants(infile=self.infile, outdir=self.outdir)

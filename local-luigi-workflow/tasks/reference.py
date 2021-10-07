@@ -11,13 +11,14 @@ class Reference(luigi.Config):
         genome (str): human hg19 genome fasta path
         genome_version (str, optional): default is hg19
         interval(str): interval list file using by gatk, suffix must be ".interval_list"
-        dbsnp(str): latest dbsnp vcf file (hg19)
+        dbsnp(str): latest dbsnp vcf file
         mills_gold_standard(str): Mills_and_1000G_gold_standard.indels.hg19.sites.vcf
         snp_1000g(str): 1000G_phase1.snps.high_confidence.hg19.sites.vcf
         phase3_1000g(str): Not available for hg19, default is None
         indel_1000g(str): 1000G_phase1.indels.hg19.sites.vcf
         omni(str): 1000G_omni2.5.hg19.sites.vcf
         hapmap(str): hapmap_3.3.hg19.sites.vcf
+        illumina_adapter(str): adapter_dir/TruSeq3-PE.fa
     """
     genome = luigi.Parameter()
     genome_version = luigi.Parameter(default="hg19")
@@ -30,4 +31,5 @@ class Reference(luigi.Config):
     snp_1000g = luigi.Parameter()
     phase3_1000g = luigi.Parameter(default=None)
     indel_1000g = luigi.Parameter()
+    illumina_adapter = luigi.Parameter()
 

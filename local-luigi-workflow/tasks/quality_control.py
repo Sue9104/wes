@@ -102,24 +102,3 @@ trimmomatic PE -threads 2 -phred33 \
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
 
-class Qualimap(luigi.Task):
-    """Evaluate alignment data: bamqc"""
-    resources = {"cpu": 4, "memory": 1}
-    sample = luigi.Parameter()
-    outdir = luigi.Parameter()
-
-    def requires(self):
-        raise NotImplemetedError("Need to be implemented!")
-
-    def output(self):
-        return luigi.LocalTarget("{outdir}/mapping/{sample}/qualimapReport.html".format(
-            outdir = self.outdir, sample = self.sample
-        ))
-
-    def run(self):
-        cmd = "qualimap bamqc -bam {outdir}/mapping/{sample}.sorted.bam -nt 8 \
-            -outdir {outdir}/mapping/{sample} -outformat PDF:HTML".format(
-                outdir = self.outdir, sample = self.sample
-        )
-        logging.info(cmd)
-        subprocess.run(cmd, shell = True)
