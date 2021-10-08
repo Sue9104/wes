@@ -9,7 +9,7 @@ import subprocess
 from workflow import DoWES
 
 # Command line parameters
-today = time.strftime("%Y-%m-%d", time.localtime())
+today = time.strftime("%Y%m%d", time.localtime())
 parser = argparse.ArgumentParser( description='Human Whole Exome Analysis')
 parser.add_argument('infile', type=str,
                     help='input csv file, header must be sample,lane,r1,r2')
@@ -30,27 +30,25 @@ outdir = os.path.abspath(outdir)
 os.makedirs(outdir, exist_ok=True)
 
 # Logging
-logfile_handler = logging.FileHandler("{}/wes_{}.log".format(outdir, today))
+logfile_handler = logging.FileHandler("{}/{}.log".format(outdir, today))
 standout_handler = logging.StreamHandler(sys.stdout)
 logging.basicConfig(
     level=logging.INFO,
     handlers = [standout_handler, logfile_handler],
     format='%(asctime)s - [line:%(lineno)d] - %(levelname)s: %(message)s'
 )
-commit_sha = subprocess.check_output('git rev-parse HEAD', shell=True, encoding='utf-8',
-                                     cwd=os.path.dirname(os.path.abspath(__file__)).rstrip())
-cmd = 'python {} {} --outdir {} --workers {}'.format(__file__, infile, outdir, args.workers)
+commit_sha = subprocess.check_output(
+    'git rev-parse HEAD', shell=True, encoding='utf-8',
+    cwd=os.path.dirname(os.path.abspath(__file__)).rstrip())
+cmd = 'python {} {} --outdir {} --workers {}'.format(
+    __file__, infile, outdir, args.workers
+)
 logging.info(cmd)
 logging.info("Commit sha: {}".format(commit_sha))
 
 # Luigi run WES
-#luigi.build([DoFreebayes(infile=infile,outdir=outdir),
-#             DoMpileup(infile=infile,outdir=outdir),
-#             DoGATK(infile=infile,outdir=outdir)],
-#            workers=args.workers, local_scheduler=args.local_scheduler)
 luigi.build(
-    [
-        DoWES(infile=infile,outdir=outdir)
-    ],
-    workers=args.workers, local_scheduler=args.local_scheduler
+    [DoWES(infile=infile,outdir=outdir)],
+    workers=args.workers,
+    local_scheduler=args.local_scheduler
 )

@@ -248,19 +248,15 @@ class Mapping(Input, luigi.Task):
         raise NotImplementedError("Task Need to implement requires function")
 
     def output(self):
-        return [
-            luigi.LocalTarget(
-                "{}/{}.merged.bam".format(self.outdir_mapping, self.sample)
-            ),
-            luigi.LocalTarget(
-                "{}/quality-control/{}/coverage.report".format(
-                    self.outdir, self.sample)
-            ),
-        ]
+        return luigi.LocalTarget(
+            "{}/quality-control/{}/coverage.report".format(
+                self.outdir, self.sample,
+            )
+        )
 
-    def runs(self):
+    def run(self):
         # mapping by lanes
-        yield [
+        sample_bams = yield [
             BWA(
                 sample=data.sample, lane=data.lane, outdir=self.outdir_mapping,
                 fq1="{outdir}/trim-adapter/{sample}_{lane}_1P.fq.gz".format(
@@ -273,27 +269,15 @@ class Mapping(Input, luigi.Task):
             for data in self.info[self.sample]
         ]
         # merge multiple bams
-        bams = [
-            '{}/{}_{}.sorted.bam'.format(
-                self.outdir_mapping, self.sample, data.lane
-            ) for data in self.info[self.sample]
-        ]
-        yield MergeSampleBams(
+        merged_bam = yield MergeSampleBams(
             sample=self.sample, outdir=self.outdir_mapping,
-            bams = bams,
+            bams = [bam.path for bam in sample_bams],
         )
-        merged_bam = "{}/{}.merged.bam".format(self.outdir_mapping, self.sample)
         # mapping statistics
         yield MappingStatistics(
-            bam = merged_bam,
+            bam = merged_bam.path,
             outdir = "{}/quality-control/{}".format(self.outdir, self.sample),
         )
-        # mark PCR dupliates
-        markdup_bam = "{}/{}.markdup.bam".format(self.outdir_mapping,self.sample)
-        yield MarkDuplicate(outfile=markdup_bam, bam=merged_bam)
-        # recalibrate base quality
-        bqsr_bam = "{}/{}.bqsr.bam".format(self.outdir_mapping, self.sample)
-        yield BaseScoreQualityRecalibrator(bam=markdup_bam, outfile=bqsr_bam)
 
 
 class PostMapping(Input, luigi.Task):
@@ -330,14 +314,14 @@ class PostMapping(Input, luigi.Task):
             "{}/{}.bqsr.bam".format(self.outdir_mapping, self.sample),
         )
 
-    def runs(self):
+    def run(self):
         merged_bam = "{}/{}.merged.bam".format(self.outdir_mapping, self.sample)
         # mark PCR dupliates
-        markdup_bam = "{}/{}.markdup.bam".format(self.outdir_mapping,self.sample)
-        yield MarkDuplicate(outfile=markdup_bam, bam=merged_bam)
+        markdup_bam = yield MarkDuplicate(outfile=markdup_bam, bam=merged_bam)
         # recalibrate base quality
-        bqsr_bam = "{}/{}.bqsr.bam".format(self.outdir_mapping, self.sample)
-        yield BaseScoreQualityRecalibrator(bam=markdup_bam, outfile=bqsr_bam)
+        yield BaseScoreQualityRecalibrator(
+            bam=markdup_bam, outfile=self.output().path,
+        )
 
 
 class MergeSampleBams(luigi.Task):
@@ -440,6 +424,7 @@ class BWA(luigi.Task):
             sample=self.sample, lane=self.lane, fq1=self.fq1, fq2=self.fq2,
             outdir=self.outdir, genome=Reference().genome,
         )
+        print("===Mapping: " + cmd)
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -828,27 +813,25 @@ class GATKSingle(Input, luigi.Task):
         os.makedirs(outdir_variants, exist_ok=True)
         return outdir_variants
 
-    @property
-    def vcf(self):
-        return "{}/{}.{}.gatk.raw.vcf.gz".format(
-            self.outdir_variants, self.sample, Reference().genome_version,
-        )
-
     def requires(self):
         raise NotImplementedError("Task Need to implement requires function")
 
     def output(self):
-        return luigi.LocalTarget("{}.hg19_multianno.final.csv".format(self.vcf))
+        return luigi.LocalTarget(
+            "{}/backup/{}/backup.finished".format(self.outdir, self.sample)
+        )
 
     def run(self):
-        bam = "{}/mapping/{}.bqsr.bam".format(self.outdir, self.sample)
-        yield HaplotypeCaller(bam=bam, outfile=self.vcf)
+        vcf = "{}/{}.{}.gatk.raw.vcf.gz".format(
+            self.outdir_variants, self.sample, Reference().genome_version,
+        )
+        yield HaplotypeCaller(bam=self.input().path, outfile=vcf)
         # hard filt
         #yield HardFilt(
         #    bam=bam, raw=raw_vcf,
         #    outfile="{}.hard-filt.vcf.gz".format(self.prefix)
         #)
-        yield Annovar(vcf=self.vcf)
+        yield Annovar(vcf=vcf)
         yield Backup(sample=self.sample, indir=self.outdir)
 
 
@@ -867,22 +850,20 @@ class FreebayesSingle(Input, luigi.Task):
         os.makedirs(outdir_variants, exist_ok=True)
         return outdir_variants
 
-    @property
-    def vcf(self):
-        return "{}/{}.{}.freebayes.raw.vcf.gz".format(
-            self.outdir_variants, self.sample, Reference().genome_version,
-        )
-
     def requires(self):
         raise NotImplementedError("Task Need to implement requires function")
 
     def output(self):
-        return luigi.LocalTarget("{}.hg19_multianno.final.csv".format(self.vcf))
+        return luigi.LocalTarget(
+            "{}/backup/{}/backup.finished".format(self.outdir, self.sample)
+        )
 
     def run(self):
-        inbam = "{}/mapping/{}.dedup.bam".format(self.outdir, self.sample)
-        yield Freebayes(inbam=inbam, outvcf=self.vcf)
-        yield Annovar(vcf=self.vcf)
+        vcf = "{}/{}.{}.gatk.raw.vcf.gz".format(
+            self.outdir_variants, self.sample, Reference().genome_version,
+        )
+        yield Freebayes(inbam=self.input().path, outvcf=vcf)
+        yield Annovar(vcf=vcf)
         yield Backup(sample=self.sample, indir=self.outdir)
 
 
@@ -901,22 +882,20 @@ class MpileupSingle(Input, luigi.Task):
         os.makedirs(outdir_variants, exist_ok=True)
         return outdir_variants
 
-    @property
-    def vcf(self):
-        return "{}/{}.{}.mpileup.raw.vcf.gz".format(
-            self.outdir_variants, self.sample, Reference().genome_version,
-        )
-
     def requires(self):
         raise NotImplementedError("Task Need to implement requires function")
 
     def output(self):
-        return luigi.LocalTarget("{}.hg19_multianno.final.csv".format(self.vcf))
+        return luigi.LocalTarget(
+            "{}/backup/{}/backup.finished".format(self.outdir, self.sample)
+        )
 
     def run(self):
-        inbam = "{}/mapping/{}.dedup.bam".format(self.outdir, self.sample)
-        yield Mpileup(inbam=inbam, outvcf=self.vcf)
-        yield Annovar(vcf=self.vcf)
+        vcf = "{}/{}.{}.mpileup.raw.vcf.gz".format(
+            self.outdir_variants, self.sample, Reference().genome_version,
+        )
+        yield Mpileup(inbam=self.input().path, outvcf=vcf)
+        yield Annovar(vcf=vcf)
         yield Backup(sample=self.sample, indir=self.outdir)
 
 
