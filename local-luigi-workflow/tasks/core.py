@@ -260,22 +260,23 @@ class Mapping(Input, luigi.Task):
             BWA(
                 sample=data.sample, lane=data.lane, outdir=self.outdir_mapping,
                 fq1="{outdir}/trim-adapter/{sample}_{lane}_1P.fq.gz".format(
-                    sample=data.sample, lane=data.lane,
+                    outdir = self.outdir, sample=data.sample, lane=data.lane,
                 ),
                 fq2="{outdir}/trim-adapter/{sample}_{lane}_2P.fq.gz".format(
-                    sample=data.sample, lane=data.lane,
+                    outdir = self.outdir, sample=data.sample, lane=data.lane,
                 ),
             )
             for data in self.info[self.sample]
         ]
         # merge multiple bams
-        merged_bam = yield MergeSampleBams(
-            sample=self.sample, outdir=self.outdir_mapping,
-            bams = [bam.path for bam in sample_bams],
+        merged_bam = "{}/{}.merged.bam".format(self.outdir_mapping, self.sample)
+        yield MergeSampleBams(
+            outbam=merged_bam,
+            inbams = [bam.path for bam in sample_bams],
         )
         # mapping statistics
         yield MappingStatistics(
-            bam = merged_bam.path,
+            inbam = merged_bam,
             outdir = "{}/quality-control/{}".format(self.outdir, self.sample),
         )
 
@@ -316,11 +317,12 @@ class PostMapping(Input, luigi.Task):
 
     def run(self):
         merged_bam = "{}/{}.merged.bam".format(self.outdir_mapping, self.sample)
+        markdup_bam ="{}/{}.markdup.bam".format(self.outdir_mapping, self.sample)
         # mark PCR dupliates
-        markdup_bam = yield MarkDuplicate(outfile=markdup_bam, bam=merged_bam)
+        yield MarkDuplicate(inbam=merged_bam, outbam=markdup_bam)
         # recalibrate base quality
         yield BaseScoreQualityRecalibrator(
-            bam=markdup_bam, outfile=self.output().path,
+            inbam=markdup_bam, outbam=self.output().path,
         )
 
 
@@ -328,26 +330,26 @@ class MergeSampleBams(luigi.Task):
     """Merge Multiple Bam Files for One Sample and Coverage Statistics
 
     Attributes:
-        bams (list): a list of bam files
-        outfile (str): output bam filename
+        inbams (list): a list of bam files
+        outbam (str): output bam filename
 
     Output:
         - {outdir}/mapping/{sample}.merged.bam
     """
     resources = {"cpu": 2, "memory": 1}
-    outfile = luigi.Parameter()
-    bams = luigi.ListParameter()
+    outbam = luigi.Parameter()
+    inbams = luigi.ListParameter()
 
     def requires(self):
         return []
 
     def output(self):
-        return luigi.LocalTarget(self.outfile)
+        return luigi.LocalTarget(self.outbam)
 
     def run(self):
         cmd = """samtools merge - {bams} | tee {outfile} \
 | samtools index - {outfile}.bai """.format(
-            bams = " ".join(self.bams), outfile = self.outfile,
+            bams = " ".join(self.inbams), outfile = self.outbam,
         )
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
@@ -357,30 +359,26 @@ class MappingStatistics(luigi.Task):
     """Mapping Coverage and Depth Statistics
 
     Attributes:
-        bam (str): bam file
+        inbam (str): bam file
         outdir (str): output directory
 
     Output:
-        - {outdir}/coverage.report
+        - {outdir}/{sample}/coverage.report
     """
     resources = {"cpu": 2, "memory": 1}
     outdir = luigi.Parameter()
-    bam = luigi.Parameter()
+    inbam = luigi.Parameter()
 
     def requires(self):
         return []
 
     def output(self):
-        return luigi.LocalTarget(
-            "{}/coverage.report".format(
-                self.outdir, self.sample
-            )
-        )
+        return luigi.LocalTarget("{}/coverage.report".format(self.outdir))
 
     def run(self):
         os.makedirs(self.outdir, exist_ok=True)
         cmd = "{bamdst} -p {bed} -o {outdir}/ {bam}".format(
-            outdir=self.outdir, bam=self.bam,
+            outdir=self.outdir, bam=self.inbam,
             bamdst=Tools().bamdst, bed=Reference().bed,
         )
         logging.info(cmd)
@@ -424,7 +422,6 @@ class BWA(luigi.Task):
             sample=self.sample, lane=self.lane, fq1=self.fq1, fq2=self.fq2,
             outdir=self.outdir, genome=Reference().genome,
         )
-        print("===Mapping: " + cmd)
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -433,28 +430,28 @@ class MarkDuplicate(luigi.Task):
     """MarkDupliate after Mapping
 
     Attributes:
-        bam (str): bam file
-        outfile (str): output bam name
+        inbam (str): input bam file
+        outbam (str): output bam name
 
     Output:
         - {outdir}/{sample}.mark_dedup.bam
     """
 
     resources = {"cpu": 20, "memory": 18}
-    bam = luigi.Parameter()
-    outfile = luigi.Parameter()
+    inbam = luigi.Parameter()
+    outbam = luigi.Parameter()
 
     def requires(self):
         return []
 
     def output(self):
-        return luigi.LocalTarget(self.outfile)
+        return luigi.LocalTarget(self.outbam)
 
     def run(self):
         cmd ="""gatk --java-options '-Xmx16G' MarkDuplicatesSpark \
 -conf 'spark.executor.cores=8' --input {bam} \
 --output {outfile} --metrics-file {outfile}.metrics.txt""".format(
-            outfile=self.outdir, bam=self.bam,
+            outfile=self.outbam, bam=self.inbam,
         )
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
@@ -463,22 +460,19 @@ class BaseScoreQualityRecalibrator(luigi.Task):
     """BaseScoreQualityRecalibrator after MarkDuplicate
 
     Attributes:
-        bam (str): bam file
-        outfile (str): output bam
+        inbam (str): bam file
+        outbam (str): output bam
 
     """
     resources = {"cpu": 4, "memory": 4}
-    sample = luigi.Parameter()
-    outdir = luigi.Parameter()
+    inbam = luigi.Parameter()
+    outbam = luigi.Parameter()
 
     def requires(self):
         return []
 
     def output(self):
-        return luigi.LocalTarget(
-            "{outdir}/{sample}.bqsr_recal_data.table".format(
-                outdir = self.outdir, sample = self.sample)
-        )
+        return luigi.LocalTarget(self.outbam)
 
     def run(self):
         cmd = """gatk BaseRecalibrator \
@@ -499,7 +493,7 @@ gatk ApplyBQSR --java-options '-Xmx16g \
             mills_gold_standard = Reference().mills_gold_standard,
             snp_1000g=Reference().snp_1000g, indel_1000g=Reference().indel_1000g,
             hapmap=Reference().hapmap, omni=Reference().omni, dbsnp=Reference().dbsnp,
-            bam=self.bam, outfile=self.outfile,
+            bam=self.inbam, outfile=self.outbam,
         )
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
@@ -529,23 +523,23 @@ class AnalyzeCovariates(luigi.Task):
 class HaplotypeCaller(luigi.Task):
     """GATK HaplotypeCaller
 
+    CNNFilt and HardFilt is available. Default no filter is used.
+
     Attributes:
         bam (str): bam file
-        outfile (str): output vcf name
+        outvcf (str): output vcf name
 
-    Output:
-        - {outdir}/call-variants/{sample}.{version}.gatk.raw.vcf.gz
     """
 
     resources = {"cpu": 10, "memory": 16}
     bam = luigi.Parameter()
-    outfile = luigi.Parameter()
+    outvcf = luigi.Parameter()
 
     def requires(self):
         return []
 
     def output(self):
-        return luigi.LocalTarget(self.outfile)
+        return luigi.LocalTarget(self.outvcf)
 
     def run(self):
         cmd = """gatk --java-options '-Xmx16g' HaplotypeCaller \
@@ -560,7 +554,7 @@ gatk CollectHsMetrics -R {genome} \
 -I {outfile} -O {outfile}.hs-metrics.txt """.format(
             genome=Reference().genome, version=Reference().genome_version,
             dbsnp=Reference().dbsnp, interval=Reference().interval,
-            bam=self.bam, outfile=self.outfile,
+            bam=self.bam, outfile=self.outvcf,
         )
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
@@ -570,23 +564,21 @@ class CNNFilt(luigi.Task):
 
     Attributes:
         bam (str): bam file
-        raw (str): raw vcf
-        outfile (str): output vcf name
+        rawvcf (str): raw vcf
+        outvcf (str): output vcf name
 
-    Output:
-        - {outdir}/call-variants/{sample}.{version}.gatk.cnn_filt.vcf.gz
     """
 
     resources = {"cpu": 4, "memory": 16}
     bam = luigi.Parameter()
-    raw = luigi.Parameter()
-    outfile = luigi.Parameter()
+    rawvcf = luigi.Parameter()
+    outvcf = luigi.Parameter()
 
     def requires(self):
         return []
 
     def output(self):
-        return luigi.LocalTarget(self.outfile)
+        return luigi.LocalTarget(self.outvcf)
 
     def run(self):
         cmd = """gatk --java-options '-Xmx16G' CNNScoreVariants \
@@ -600,7 +592,7 @@ gatk FilterVariantTranches --info-key CNN_2D \
             genome = Reference().genome, version = Reference().genome_version,
             hapmap = Reference().hapmap,
             mills_gold_standard = Reference().mills_gold_standard,
-            bam = self.bam, raw = self.raw, outfile = self.outfile
+            bam = self.bam, raw = self.rawvcf, outfile = self.outvcf,
         )
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
@@ -610,22 +602,20 @@ class HardFilt(luigi.Task):
 
     Attributes:
         bam (str): bam file
-        raw (str): raw vcf
-        outfile (str): output vcf name
+        rawvcf (str): raw vcf
+        outvcf (str): output vcf name
 
-    Output:
-        - {outdir}/call-variants/{sample}.{version}.gatk.cnn_filt.vcf.gz
     """
     resources = {"cpu": 1, "memory": 1}
     bam = luigi.Parameter()
-    raw = luigi.Parameter()
-    outfile = luigi.Parameter()
+    rawvcf = luigi.Parameter()
+    outvcf = luigi.Parameter()
 
     def requires(self):
         return []
 
     def output(self):
-        return luigi.LocalTarget(self.outfile)
+        return luigi.LocalTarget(self.outvcf)
 
     def run(self):
         cmd = """gatk SelectVariants --select-type-to-include SNP -R {genome} \
@@ -645,7 +635,7 @@ gatk MergeVcfs -I {outfile}.snp.hard-filt.gz -I {outfile}.indel.hard-filt.gz \
 -O {outfile}
 rm {outfile}.snp* {outfile}.indel* """.format(
             genome = Reference().genome,
-            bam=self.bam, raw=self.raw, outfile=self.outfile,
+            bam=self.bam, raw=self.rawvcf, outfile=self.outvcf,
         )
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
@@ -825,11 +815,11 @@ class GATKSingle(Input, luigi.Task):
         vcf = "{}/{}.{}.gatk.raw.vcf.gz".format(
             self.outdir_variants, self.sample, Reference().genome_version,
         )
-        yield HaplotypeCaller(bam=self.input().path, outfile=vcf)
+        yield HaplotypeCaller(bam=self.input().path, outvcf=vcf)
         # hard filt
         #yield HardFilt(
-        #    bam=bam, raw=raw_vcf,
-        #    outfile="{}.hard-filt.vcf.gz".format(self.prefix)
+        #    bam=bam, rawvcf=raw_vcf,
+        #    outvcf="{}.hard-filt.vcf.gz".format(self.prefix)
         #)
         yield Annovar(vcf=vcf)
         yield Backup(sample=self.sample, indir=self.outdir)
