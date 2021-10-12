@@ -925,7 +925,7 @@ class Backup(luigi.Task):
 
     @property
     def outdir_backup(self):
-        outdir_backup = "{}/backup/{}".format(self.indir)
+        outdir_backup = "{}/backup/{}".format(self.indir, self.sample)
         os.makedirs(outdir_backup, exist_ok=True)
         return outdir_backup
 
@@ -936,24 +936,33 @@ class Backup(luigi.Task):
         return luigi.LocalTarget('{}/backup.finshed'.format(self.outdir_backup))
 
     def run(self):
+        vcfs = glob.glob("{indir}/call-variants/{sample}*.raw.vcf.gz".format(
+            indir = self.indir, sample=self.sample,
+        ))
+        csvs = glob.glob(
+            "{indir}/call-variants/{sample}*hg19_multianno*csv".format(
+                indir = self.indir, sample=self.sample)
+        )
         cmd = """cp -r {indir}/quality-control/{sample} {backup}/quality-control\
- && cp {indir}/call-variants/{sample}*.raw.vcf.gz \
- {indir}/call-variants/{sample}*hg19_multianno*csv {backup}/ """.format(
-            indir=self.indir, sample=self.sample, backup=self.outdir_backup,
+ && cp {vcf} {csv} {backup}/ """.format(
+            indir=self.indir, sample=self.sample,
+            vcf = " ".join(vcfs), csv=" ".join(csvs),
+            backup=self.outdir_backup,
         )
         # for gatk
         bqsr_files = glob.glob(
             "{}/mapping/{}*bqsr.ba*".format(self.indir,self.sample)
         )
         if len(bqsr_files) > 0:
-            cmd += "cp {} {}/".format(" ".join(bqsr_files), self.outdir_backup)
+            cmd += " && cp {} {}/".format(" ".join(bqsr_files), self.outdir_backup)
         # for
         dedup_files = glob.glob(
             "{}/mapping/{}*dedup.ba*".format(self.indir,self.sample)
         )
         if len(dedup_files) > 0:
-            cmd += "cp {} {}/".format(" ".join(dedup_files), self.outdir_backup)
+            cmd += " && cp {} {}/".format(" ".join(dedup_files), self.outdir_backup)
         cmd += " && touch {}/backup.finshed".format(self.outdir_backup)
+        print(cmd)
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
 
