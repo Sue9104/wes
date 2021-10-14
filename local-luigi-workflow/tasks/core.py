@@ -933,7 +933,7 @@ class Backup(luigi.Task):
         return []
 
     def output(self):
-        return luigi.LocalTarget('{}/backup.finshed'.format(self.outdir_backup))
+        return luigi.LocalTarget('{}/backup.finished'.format(self.outdir_backup))
 
     def run(self):
         vcfs = glob.glob("{indir}/call-variants/{sample}*.raw.vcf.gz".format(
@@ -961,7 +961,7 @@ class Backup(luigi.Task):
         )
         if len(dedup_files) > 0:
             cmd += " && cp {} {}/".format(" ".join(dedup_files), self.outdir_backup)
-        cmd += " && touch {}/backup.finshed".format(self.outdir_backup)
+        cmd += " && touch {}/backup.finished".format(self.outdir_backup)
         print(cmd)
         logging.info(cmd)
         subprocess.run(cmd, shell=True)
