@@ -1,0 +1,7 @@
+[clog]
+repository = "https://github.com/Sue9104/wes"
+outfile = "CHANGELOG.md"
+from-latest-tag = true
+
+[sections]
+Others = ["build", "ci", "test"]
