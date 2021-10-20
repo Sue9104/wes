@@ -24,7 +24,7 @@ for sample in samples:
         fastqs = sorted(glob.glob(
             '{}/raw-data/{}/{}/*q.gz'.format(data_path,sample,lane)
         ))
-        index = ['#SAMPLE','LANE','R1','R2']
+        index = ['sample','lane','r1','r2']
         internal_id = '{}_{}'.format(args.project, sample)
         row = pd.Series(
             [internal_id, lane_id] + fastqs,
