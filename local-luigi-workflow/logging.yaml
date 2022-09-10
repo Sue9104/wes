@@ -1,0 +1,36 @@
+version: 1
+formatters:
+  simple:
+    format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  minimal:
+    format: '%(message)s'
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: DEBUG
+    formatter: simple
+    stream: ext://sys.stdout
+  full:
+    class: logging.FileHandler
+    level: INFO
+    filename: wes.log
+  cmd:
+    class: logging.FileHandler
+    level: INFO
+    filename: cmd.log
+  time:
+    class: logging.FileHandler
+    level: INFO
+    filename: time.log
+loggers:
+  cmd:
+    level: DEBUG
+    handlers: [cmd]
+    propagate: no
+  time:
+    level: DEBUG
+    handlers: [time]
+    propagate: no
+root:
+  level: DEBUG
+  handlers: [console, full]
