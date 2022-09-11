@@ -1,4 +1,4 @@
 from .reference import Reference
-from .tools import Tools
 from .core import *
-from .userlogger import set_logger
+#from .core import QualityControl,FastQC,Mapping,PostMapping,RemoveDuplicates,GATKSingle,FreebayesSingle,MpileupSingle,DoWES
+#from .core import FiltLowQuality

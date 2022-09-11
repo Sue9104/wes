@@ -9,7 +9,6 @@ import logging.config
 import yaml
 import subprocess
 from workflow import DoWES
-from tasks import set_logger
 
 # Command line parameters
 today = time.strftime("%Y%m%d", time.localtime())
@@ -34,8 +33,15 @@ outdir = os.path.abspath(outdir)
 os.makedirs(outdir, exist_ok=True)
 os.chdir(outdir)
 
-# Logging
-rootlogger, cmdlogger, timelogger = set_logger()
+# logging
+script_path = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(script_path,'logging.yaml'), 'r') as stream:
+    config = yaml.load(stream, Loader=yaml.FullLoader)
+logging.config.dictConfig(config)
+rootlogger = logging.getLogger('root')
+cmdlogger = logging.getLogger('cmd')
+timelogger = logging.getLogger('ptime')
+## write command to logging
 commit_sha = subprocess.check_output(
     'git rev-parse HEAD', encoding='utf-8', shell=True,
     cwd=os.path.dirname(os.path.abspath(__file__)))
@@ -44,6 +50,7 @@ cmd = 'python {} {} --outdir {} --workers {}'.format(
 )
 rootlogger.info(cmd)
 rootlogger.info("Commit sha: {}".format(commit_sha))
+cmdlogger.info(cmd)
 
 # Luigi run WES
 luigi.build(

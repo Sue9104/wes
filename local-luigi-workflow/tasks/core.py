@@ -8,36 +8,43 @@ import glob
 import logging
 from datetime import datetime, timedelta
 from .reference import Reference
-from .tools import Tools
-#from .userlogger import rootlogger,cmdlogger,timelogger
-from .userlogger import set_logger
 
 # logging
-rootlogger, cmdlogger, timelogger = set_logger()
+rootlogger = logging.getLogger("root")
+cmdlogger = logging.getLogger("cmd")
+timelogger = logging.getLogger("ptime")
+
 ##################################################
 ## Callbacks for execution
 ##################################################
 @luigi.Task.event_handler(luigi.Event.START)
 def start_time(task):
-    logging.warning('Task:{task}\tStartTime:{time}'.format(
+    text = 'Task:{task}\tStartTime:{time}'.format(
         task = task.__class__.__name__,
         time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    ))
+    )
+    rootlogger.info(text)
+
+@luigi.Task.event_handler(luigi.Event.SUCCESS)
+def end_time(task):
+    text = 'Task:{task}\tEndTime:{time}'.format(
+        task = task.__class__.__name__,
+        time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    )
+    rootlogger.info(text)
 
 @luigi.Task.event_handler(luigi.Event.PROCESSING_TIME)
 def execution_time(task, processing_time):
     end = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    start = (
-        datetime.now()  - timedelta(seconds = processing_time)
-    ).strftime('%Y-%m-%d %H:%M:%S')
-    text = 'Task:{task}\t{time:.0f}min\tStarted:{start:.0f}\tEnded:{end:.0f}'.format(
+    start = (datetime.now() - timedelta(seconds = processing_time)).strftime('%Y-%m-%d %H:%M:%S')
+    text = "Task:{task}\t{ptime:.1f}min\tStarted:{start}\tEnded:{end}".format(
         task = task.__class__.__name__,
-        time = processing_time / 60,
+        ptime = processing_time / 60,
         start = start,
         end = end
     )
+    rootlogger.info(text)
     timelogger.info(text)
-    logging.info(text)
 
 
 ##################################################
@@ -106,7 +113,7 @@ class QualityControl(Input, luigi.Task):
 
     def run(self):
         cmd = "multiqc -o {0} {0}".format(self.outdir_qc)
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -148,7 +155,7 @@ class FastQC(luigi.Task):
 
     def run(self):
         cmd = "fastqc -f fastq -o {} {}".format(self.outdir, self.fastq)
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -227,7 +234,7 @@ LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36""".format(
             R1 = self.R1, R2=self.R2, prefix = prefix,
             adapter = Reference().illumina_adapter, outdir = self.outdir,
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -365,7 +372,7 @@ class MergeSampleBams(luigi.Task):
 | samtools index - {outfile}.bai """.format(
             bams = " ".join(self.inbams), outfile = self.outbam,
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -392,11 +399,11 @@ class MappingStatistics(luigi.Task):
 
     def run(self):
         os.makedirs(self.outdir, exist_ok=True)
-        cmd = "{bamdst} -p {bed} -o {outdir}/ {bam}".format(
+        cmd = "bamdst -p {bed} -o {outdir}/ {bam}".format(
             outdir=self.outdir, bam=self.inbam,
-            bamdst=Tools().bamdst, bed=Reference().bed,
+            bed=Reference().bed,
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -438,7 +445,7 @@ class BWA(luigi.Task):
             sample=self.sample, lane=self.lane, fq1=self.fq1, fq2=self.fq2,
             outdir=self.outdir, genome=Reference().genome,
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -470,7 +477,7 @@ class MarkDuplicate(luigi.Task):
 --output {outfile} --metrics-file {outfile}.metrics.txt""".format(
             outfile=self.outbam, bam=self.inbam,
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -513,7 +520,7 @@ gatk ApplyBQSR --java-options '-Xmx256g \
             hapmap=Reference().hapmap, omni=Reference().omni, dbsnp=Reference().dbsnp,
             bam=self.inbam, outfile=self.outbam,
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -535,7 +542,7 @@ class AnalyzeCovariates(luigi.Task):
 -plots {outdir}/mapping/{sample}.bqsr_analyze_covariates.pdf""".format(
                    outdir = self.outdir, sample = self.sample
                )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -576,7 +583,7 @@ gatk CollectHsMetrics -R {genome} \
             dbsnp=Reference().dbsnp, interval=Reference().interval,
             bam=self.bam, outfile=self.outvcf,
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -615,7 +622,7 @@ gatk FilterVariantTranches --info-key CNN_2D \
             mills_gold_standard = Reference().mills_gold_standard,
             bam = self.bam, raw = self.rawvcf, outfile = self.outvcf,
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -659,7 +666,7 @@ rm {outfile}.snp* {outfile}.indel* """.format(
             genome = Reference().genome,
             bam=self.bam, raw=self.rawvcf, outfile=self.outvcf,
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -712,7 +719,7 @@ rm {vcf}.hg19_multianno.final.csv.tmp
             annovar_database_dir = Reference().annovar_database_dir,
             vcf = self.vcf
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -747,7 +754,7 @@ class RemoveDuplicates(Input, luigi.Task):
         cmd = "samtools rmdup {bam} {outfile}".format(
             bam=self.inbam, outfile=self.outfile,
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -775,7 +782,7 @@ class Freebayes(luigi.Task):
             genome=Reference().genome, bam=self.inbam, outfile=self.outvcf
         )
         # bcftools filter -e 'QUAL < 20' -s LOWQUAL {rawvcf} {outvcf}
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -804,7 +811,7 @@ class Mpileup(luigi.Task):
             bam=self.inbam, vcf=self.outvcf,
             genome=Reference().genome, ploidy=Reference().genome_version
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -989,7 +996,7 @@ class Backup(luigi.Task):
         if len(dedup_files) > 0:
             cmd += " && cp {} {}/".format(" ".join(dedup_files), self.outdir_backup)
         cmd += " && touch {}/backup.finished".format(self.outdir_backup)
-        logging.info(cmd)
+        rootlogger.info(cmd)
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
@@ -1015,5 +1022,16 @@ class Qualimap(luigi.Task):
             -outdir {outdir}/mapping/{sample} -outformat PDF:HTML".format(
                 outdir = self.outdir, sample = self.sample
         )
-        logging.info(cmd)
+        rootlogger.info(cmd)
+        cmdlogger.info(cmd)
         subprocess.run(cmd, shell = True)
+
+
+class A(luigi.Task):
+    def requires(self):
+        return None
+    def output(self):
+        return luigi.LocalTarget( "aa.txt" )
+    def run(self):
+        print(1)
+        subprocess.run("touch aa.txt", shell=True)
