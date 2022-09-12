@@ -997,7 +997,6 @@ class Backup(luigi.Task):
             cmd += " && cp {} {}/".format(" ".join(dedup_files), self.outdir_backup)
         cmd += " && touch {}/backup.finished".format(self.outdir_backup)
         rootlogger.info(cmd)
-        cmdlogger.info(cmd)
         subprocess.run(cmd, shell=True)
 
 
@@ -1026,12 +1025,3 @@ class Qualimap(luigi.Task):
         cmdlogger.info(cmd)
         subprocess.run(cmd, shell = True)
 
-
-class A(luigi.Task):
-    def requires(self):
-        return None
-    def output(self):
-        return luigi.LocalTarget( "aa.txt" )
-    def run(self):
-        print(1)
-        subprocess.run("touch aa.txt", shell=True)
