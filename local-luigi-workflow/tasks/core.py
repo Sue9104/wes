@@ -856,7 +856,7 @@ class GATKSingle(Input, luigi.Task):
         #    bam=bam, rawvcf=raw_vcf,
         #    outvcf="{}.hard-filt.vcf.gz".format(self.prefix)
         #)
-        yield Annovar(vcf=vcf)
+        #yield Annovar(vcf=vcf)
         yield Backup(sample=self.sample, indir=self.outdir)
 
 
@@ -888,7 +888,7 @@ class FreebayesSingle(Input, luigi.Task):
             self.outdir_variants, self.sample, Reference().genome_version,
         )
         yield Freebayes(inbam=self.input().path, outvcf=vcf)
-        yield Annovar(vcf=vcf)
+        #yield Annovar(vcf=vcf)
         yield Backup(sample=self.sample, indir=self.outdir)
 
 
@@ -920,7 +920,7 @@ class MpileupSingle(Input, luigi.Task):
             self.outdir_variants, self.sample, Reference().genome_version,
         )
         yield Mpileup(inbam=self.input().path, outvcf=vcf)
-        yield Annovar(vcf=vcf)
+        #yield Annovar(vcf=vcf)
         yield Backup(sample=self.sample, indir=self.outdir)
 
 

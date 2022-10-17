@@ -41,8 +41,8 @@ class DoGATK(luigi.WrapperTask):
             anno_prefix = "{outdir}/annotation/{sample}.gatk.annovar".format(
                 outdir = self.outdir, sample = sample
             )
-            yield Annovar(sample = sample, outdir = self.outdir,
-                          input_vcf = vcf, output_prefix = anno_prefix)
+            #yield Annovar(sample = sample, outdir = self.outdir,
+            #              input_vcf = vcf, output_prefix = anno_prefix)
             # snpeff
             #yield SnpEff(sample = sample, outdir = self.outdir,
             #             input_vcf = vcf, output_prefix = "gatk")
