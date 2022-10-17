@@ -17,10 +17,10 @@ parser.add_argument('infile', type=str,
                     help='input csv file, header must be sample,lane,r1,r2')
 parser.add_argument('--outdir', type=str,
                     help='output directory')
-parser.add_argument('--project', type=str, default="",
-                    help='output directory')
-parser.add_argument('--workers', type=int, default=8,
-                    help='how many workers use to run WES, default is 6')
+parser.add_argument('--project', type=str, default="ngs",
+                    help='project name')
+parser.add_argument('--workers', type=int, default=20,
+                    help='how many workers use to run WES, default is 20')
 parser.add_argument('--local-scheduler', action='store_true', default=False,
                     help="use local scheduler instead of central scheduler")
 
@@ -28,7 +28,7 @@ args = parser.parse_args()
 infile = os.path.abspath(args.infile)
 outdir = args.outdir
 if not outdir:
-    outdir = "wes-{}-{}".format(args.project, today)
+    outdir = "{}-CallVariants-{}".format(args.project, today)
 outdir = os.path.abspath(outdir)
 os.makedirs(outdir, exist_ok=True)
 os.chdir(outdir)

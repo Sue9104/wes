@@ -83,7 +83,8 @@ class Input(luigi.Config):
         return info
 
 
-class QualityControl(Input, luigi.Task):
+class QualityControl(Input, luigi.WrapperTask):
+#class QualityControl(Input, luigi.Task):
     """Using FastQC to quality control
 
     Attributes:
@@ -108,14 +109,14 @@ class QualityControl(Input, luigi.Task):
     def requires(self):
         raise NotImplementedError("Task Need to implement requires function")
 
-    def output(self):
-        return luigi.LocalTarget('{}/multiqc_report.html'.format(self.outdir_qc))
+    #def output(self):
+    #    return luigi.LocalTarget('{}/multiqc_report.html'.format(self.outdir_qc))
 
-    def run(self):
-        cmd = "multiqc -o {0} {0}".format(self.outdir_qc)
-        rootlogger.info(cmd)
-        cmdlogger.info(cmd)
-        subprocess.run(cmd, shell=True)
+    #def run(self):
+    #    cmd = "multiqc -o {0} {0}".format(self.outdir_qc)
+    #    rootlogger.info(cmd)
+    #    cmdlogger.info(cmd)
+    #    subprocess.run(cmd, shell=True)
 
 
 class CheckExists(luigi.ExternalTask):
